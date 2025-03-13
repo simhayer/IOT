@@ -1,0 +1,70 @@
+#include <SoftwareSerial.h>
+
+SoftwareSerial espSerial(2, 3);  // RX, TX pins
+const char* ssid = "Simrat";
+const char* password = "password20";
+const char* host = "b4ca-131-104-23-159.ngrok-free.app";
+const int httpPort = 80;
+
+void setup() {
+  Serial.begin(9600);
+  espSerial.begin(9600);
+
+  delay(3000); // ESP warm-up
+  
+  sendCommand("AT", "OK", 2000);
+  sendCommand("AT+CWMODE=1", "OK", 2000);
+  sendCommand("AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"", "WIFI GOT IP", 10000);
+  sendCommand("AT+CIFSR", "OK", 2000);
+
+  delay(2000); // Wait before starting TCP connection
+  
+  testTcpConnection();
+}
+
+void loop() {
+  while (espSerial.available()) {
+    Serial.write(espSerial.read());
+  }
+}
+
+void testTcpConnection() {
+  if (sendCommand("AT+CIPSTART=\"TCP\",\"" + String(host) + "\"," + String(httpPort), "CONNECT", 5000)) {
+    Serial.println("✅ TCP connection successful!");
+
+    String httpRequest = String("GET / HTTP/1.1\r\n") +
+                         "Host: " + host + "\r\n" +
+                         "Accept: application/json\r\n" +
+                         "Connection: close\r\n\r\n";
+
+    int len = httpRequest.length();
+
+    if (sendCommand("AT+CIPSEND=" + String(len), ">", 5000)) {
+      espSerial.print(httpRequest);
+      Serial.println("✅ HTTP request sent:");
+      Serial.println(httpRequest);
+    } else {
+      Serial.println("❌ Failed to initiate data send.");
+    }
+  } else {
+    Serial.println("❌ TCP connection failed.");
+  }
+}
+
+bool sendCommand(String command, String expectedResponse, int timeout) {
+  espSerial.println(command);
+  long int time = millis();
+  String response = "";
+
+  while ((millis() - time) < timeout) {
+    while (espSerial.available()) response += (char)espSerial.read();
+    if (response.indexOf(expectedResponse) != -1) {
+      Serial.println("✅ Success: " + command);
+      Serial.println("Response: " + response);
+      return true;
+    }
+  }
+  Serial.println("❌ Failed: " + command);
+  Serial.println("Response: " + response);
+  return false;
+}
